@@ -1,0 +1,54 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Log files
+*.log
+logs/
+/var/log/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Backup files
+backups/
+*.backup
+*.bak
+*.sql
+*.sql.gz
+*.tar.gz
+
+# Environment and config files
+.env
+.env.local
+config/local.conf
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Credentials
+*.pem
+*.key
+credentials.json
+!example.key
+
+# Cache
+.cache/
+*.cache

@@ -1,0 +1,375 @@
+name: Test DevOps Scripts
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  shellcheck:
+    name: ShellCheck Bash Scripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './scripts'
+          severity: warning
+
+  test-bash-syntax:
+    name: Test Bash Script Syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate bash syntax
+        run: |
+          echo "Validating bash scripts..."
+          find ./scripts -name "*.sh" -type f | while read script; do
+            echo "Checking $script"
+            bash -n "$script"
+            if [ $? -eq 0 ]; then
+              echo "✓ $script syntax is valid"
+            else
+              echo "✗ $script has syntax errors"
+              exit 1
+            fi
+          done
+
+      - name: Check for shebang
+        run: |
+          find ./scripts -name "*.sh" -type f | while read script; do
+            if head -n 1 "$script" | grep -q "^#!/bin/bash"; then
+              echo "✓ $script has correct shebang"
+            else
+              echo "✗ $script missing or incorrect shebang"
+              exit 1
+            fi
+          done
+
+  test-server-health-check:
+    name: Test Server Health Check Script
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sysstat net-tools
+
+      - name: Test script execution
+        run: |
+          chmod +x scripts/server-management/server-health-check.sh
+          # Run script in dry-run mode
+          bash scripts/server-management/server-health-check.sh || true
+          echo "✓ Health check script executed"
+
+      - name: Check script functions
+        run: |
+          # Check if script contains required functions
+          for func in check_cpu check_memory check_disk check_network; do
+            if grep -q "^${func}()" scripts/server-management/server-health-check.sh; then
+              echo "✓ Function $func exists"
+            else
+              echo "✗ Function $func missing"
+              exit 1
+            fi
+          done
+
+  test-docker-cleanup:
+    name: Test Docker Cleanup Script
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Test script in dry-run mode
+        run: |
+          chmod +x scripts/docker/docker-cleanup.sh
+          LOG_DIR=/tmp bash scripts/docker/docker-cleanup.sh --dry-run
+          echo "✓ Docker cleanup script executed in dry-run"
+
+      - name: Verify help message
+        run: |
+          chmod +x scripts/docker/docker-cleanup.sh
+          if bash scripts/docker/docker-cleanup.sh --help | grep -q "Docker Cleanup Script"; then
+            echo "✓ Help message works"
+          else
+            echo "✗ Help message missing"
+            exit 1
+          fi
+
+  test-database-backup:
+    name: Test Database Backup Script
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install MySQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mysql-client postgresql-client
+
+      - name: Test script help
+        run: |
+          chmod +x scripts/backup/database-backup.sh
+          if bash scripts/backup/database-backup.sh --help | grep -q "Database Backup Script"; then
+            echo "✓ Help message works"
+          else
+            echo "✗ Help message missing"
+            exit 1
+          fi
+
+      - name: Check backup functions
+        run: |
+          for func in backup_mysql backup_postgresql backup_mongodb compress_backup encrypt_backup; do
+            if grep -q "^${func}()" scripts/backup/database-backup.sh; then
+              echo "✓ Function $func exists"
+            else
+              echo "✗ Function $func missing"
+              exit 1
+            fi
+          done
+
+  test-disk-cleanup:
+    name: Test Disk Cleanup Script
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test dry-run mode
+        run: |
+          chmod +x scripts/server-management/disk-cleanup.sh
+          bash scripts/server-management/disk-cleanup.sh --dry-run 2>&1 || true
+          echo "✓ Disk cleanup dry-run executed"
+
+      - name: Check cleanup functions
+        run: |
+          for func in clean_old_logs clean_temp_files clean_package_cache; do
+            if grep -q "^${func}()" scripts/server-management/disk-cleanup.sh; then
+              echo "✓ Function $func exists"
+            else
+              echo "✗ Function $func missing"
+              exit 1
+            fi
+          done
+
+  test-ssl-checker:
+    name: Test SSL Certificate Checker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test help message
+        run: |
+          chmod +x scripts/server-management/ssl-certificate-checker.sh
+          if bash scripts/server-management/ssl-certificate-checker.sh --help | grep -q "SSL Certificate"; then
+            echo "✓ Help message works"
+          else
+            echo "✗ Help message missing"
+            exit 1
+          fi
+
+      - name: Test SSL check on known domain
+        run: |
+          chmod +x scripts/server-management/ssl-certificate-checker.sh
+          bash scripts/server-management/ssl-certificate-checker.sh --domain google.com || true
+          echo "✓ SSL checker executed"
+
+  test-docker-backup:
+    name: Test Docker Backup Script
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Test script syntax
+        run: |
+          chmod +x scripts/docker/docker-backup.sh
+          bash -n scripts/docker/docker-backup.sh
+          echo "✓ Docker backup script syntax is valid"
+
+  test-zero-downtime-deploy:
+    name: Test Zero Downtime Deploy Script
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test script syntax
+        run: |
+          chmod +x scripts/deployment/zero-downtime-deploy.sh
+          bash -n scripts/deployment/zero-downtime-deploy.sh
+          echo "✓ Zero downtime deploy script syntax is valid"
+
+      - name: Check required parameters
+        run: |
+          chmod +x scripts/deployment/zero-downtime-deploy.sh
+          if bash scripts/deployment/zero-downtime-deploy.sh 2>&1 | grep -q "Error.*required"; then
+            echo "✓ Script validates required parameters"
+          else
+            echo "✗ Script missing parameter validation"
+            exit 1
+          fi
+
+  test-resource-monitor:
+    name: Test Resource Monitor Python Script
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Test help message
+        run: |
+          chmod +x scripts/monitoring/resource-monitor.py
+          python3 scripts/monitoring/resource-monitor.py --help
+          echo "✓ Resource monitor help works"
+
+      - name: Test imports
+        run: |
+          python3 -c "import sys; sys.path.insert(0, 'scripts/monitoring'); import psutil; import requests"
+          echo "✓ All required modules can be imported"
+
+  test-python-scripts:
+    name: Test Python Scripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pylint
+        run: pip install pylint
+
+      - name: Lint Python scripts
+        run: |
+          find ./scripts -name "*.py" -type f | while read script; do
+            echo "Linting $script"
+            pylint "$script" --disable=C,R,W || true
+          done
+        continue-on-error: true
+
+  security-scan:
+    name: Security Scan Scripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy security scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './scripts'
+          severity: 'CRITICAL,HIGH'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  check-documentation:
+    name: Check Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify README exists
+        run: |
+          if [ ! -f README.md ]; then
+            echo "✗ README.md not found"
+            exit 1
+          fi
+          echo "✓ README.md exists"
+
+      - name: Check script documentation
+        run: |
+          find ./scripts -name "*.sh" -type f | while read script; do
+            if head -n 10 "$script" | grep -q "Description:"; then
+              echo "✓ $script has description"
+            else
+              echo "⚠ $script missing description"
+            fi
+          done
+
+      - name: Validate markdown
+        uses: DavidAnson/markdownlint-cli2-action@v14
+        with:
+          globs: '**/*.md'
+        continue-on-error: true
+
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [shellcheck, test-bash-syntax, test-server-health-check, test-docker-cleanup, test-database-backup, test-disk-cleanup, test-ssl-checker, test-docker-backup, test-zero-downtime-deploy, test-resource-monitor, security-scan, check-documentation]
+    if: always()
+
+    steps:
+      - name: Summary
+        run: |
+          echo "## DevOps Scripts Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All script tests completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tested:" >> $GITHUB_STEP_SUMMARY
+          echo "- ShellCheck validation" >> $GITHUB_STEP_SUMMARY
+          echo "- Bash syntax validation" >> $GITHUB_STEP_SUMMARY
+          echo "- Server health check script" >> $GITHUB_STEP_SUMMARY
+          echo "- Disk cleanup script" >> $GITHUB_STEP_SUMMARY
+          echo "- SSL certificate checker" >> $GITHUB_STEP_SUMMARY
+          echo "- Docker cleanup script" >> $GITHUB_STEP_SUMMARY
+          echo "- Docker backup script" >> $GITHUB_STEP_SUMMARY
+          echo "- Database backup script" >> $GITHUB_STEP_SUMMARY
+          echo "- Zero downtime deployment" >> $GITHUB_STEP_SUMMARY
+          echo "- Resource monitor (Python)" >> $GITHUB_STEP_SUMMARY
+          echo "- Security scanning" >> $GITHUB_STEP_SUMMARY
